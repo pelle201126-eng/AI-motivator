@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Crique - Gamifierad Självutveckling & Ranksystem</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Supabase JS CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        body { font-family: 'Inter', system-ui, -apple-system, sans-serif; }
+        .glass { background: rgba(17, 24, 39, 0.7); backdrop-filter: blur(12px); border: 1px solid rgba(255, 255, 255, 0.08); }
+        .rank-bronze { color: #cd7f32; }
+        .rank-silver { color: #c0c0c0; }
+        .rank-gold { color: #ffd700; }
+        .rank-platinum { color: #00e5ff; }
+        .rank-diamond { color: #b9f2ff; }
+        .rank-unreal { color: #ff0055; text-shadow: 0 0 10px rgba(255,0,85,0.5); }
+    </style>
+</head>
+<body class="bg-gray-950 text-gray-100 min-h-screen pb-12">
+
+    <!-- Header / Stats Bar -->
+    <header class="sticky top-0 z-40 glass border-b border-gray-800 px-6 py-4 mb-6">
+        <div class="max-w-4xl mx-auto flex justify-between items-center">
+            <div class="flex items-center space-x-3">
+                <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center font-bold text-xl shadow-lg shadow-indigo-500/20">
+                    C
+                </div>
+                <div>
+                    <h1 class="font-bold text-lg leading-none">Crique</h1>
+                    <span id="sync-status" class="text-xs text-gray-400">Ansluter till molnet...</span>
+                </div>
+            </div>
+
+            <!-- Gamification Status Bar (Fortnite-inspirerad Rank) -->
+            <div class="flex items-center space-x-6">
+                <!-- Streak -->
+                <div class="flex items-center space-x-1 text-orange-400 font-semibold" title="Daglig Streak">
+                    <i data-lucide="flame" class="w-5 h-5"></i>
+                    <span id="streak-count">0</span> <span class="text-xs font-normal text-gray-400">dagar</span>
+                </div>
+
+                <!-- Rank Display -->
+                <div class="text-right">
+                    <div id="user-rank" class="font-extrabold text-sm tracking-wider uppercase rank-bronze">BRONZE I</div>
+                    <div id="xp-text" class="text-xs text-gray-400">0 / 100 XP</div>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="max-w-4xl mx-auto px-4 space-y-6">
+
+        <!-- Nav Tabs -->
+        <div class="flex space-x-2 border-b border-gray-800 pb-2 overflow-x-auto">
+            <button onclick="switchTab('dashboard')" id="tab-dashboard" class="px-4 py-2 font-medium rounded-lg bg-indigo-600 text-white flex items-center space-x-2">
+                <i data-lucide="check-square" class="w-4 h-4"></i><span>Dagliga Mål</span>
+            </button>
+            <button onclick="switchTab('strava')" id="tab-strava" class="px-4 py-2 font-medium rounded-lg text-gray-400 hover:text-white flex items-center space-x-2">
+                <i data-lucide="award" class="w-4 h-4"></i><span>Strava & Aktivitet</span>
+            </button>
+            <button onclick="switchTab('focus')" id="tab-focus" class="px-4 py-2 font-medium rounded-lg text-gray-400 hover:text-white flex items-center space-x-2">
+                <i data-lucide="timer" class="w-4 h-4"></i><span>Fokuspass (1h)</span>
+            </button>
+            <button onclick="switchTab('leaderboard')" id="tab-leaderboard" class="px-4 py-2 font-medium rounded-lg text-gray-400 hover:text-white flex items-center space-x-2">
+                <i data-lucide="trophy" class="w-4 h-4"></i><span>Topplista</span>
+            </button>
+        </div>
+
+        <!-- TAB: DASHBOARD / CHECKLIST -->
+        <section id="view-dashboard" class="space-y-4">
+            <div class="glass p-6 rounded-2xl">
+                <h2 class="text-xl font-bold mb-4 flex items-center space-x-2">
+                    <i data-lucide="list-todo" class="text-indigo-400"></i>
+                    <span>Dagens Uppgifter</span>
+                </h2>
+                
+                <form id="add-task-form" onsubmit="addTask(event)" class="flex gap-2 mb-6">
+                    <input type="text" id="task-input" placeholder="Ny vana eller uppgift..." required class="flex-1 bg-gray-900 border border-gray-800 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-indigo-500">
+                    <input type="number" id="task-xp" placeholder="XP" value="10" min="5" max="100" class="w-20 bg-gray-900 border border-gray-800 rounded-xl px-3 py-3 text-sm text-center focus:outline-none focus:border-indigo-500">
+                    <button type="submit" class="bg-indigo-600 hover:bg-indigo-500 px-5 py-3 rounded-xl font-semibold text-sm transition flex items-center">
+                        <i data-lucide="plus" class="w-4 h-4 mr-1"></i> Lägg till
+                    </button>
+                </form>
+
+                <div id="task-list" class="space-y-3">
+                    <!-- Dynamiska uppgifter hamnar här -->
+                </div>
+            </div>
+        </section>
+
+        <!-- TAB: STRAVA & AKTIVITET -->
+        <section id="view-strava" class="hidden space-y-4">
+            <div class="glass p-6 rounded-2xl">
+                <h2 class="text-xl font-bold mb-2 flex items-center space-x-2">
+                    <i data-lucide="activity" class="text-indigo-400"></i>
+                    <span>Logga Aktivitet & Strava-pass</span>
+                </h2>
+                <p class="text-xs text-gray-400 mb-6">Logga dina pass och tjäna XP baserat på reglerna nedan.</p>
+                
+                <!-- Snabbval baserade på bildens tabelldata -->
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-6">
+                    <button onclick="quickLog('Klara en enkel vana', 10)" class="p-3 bg-gray-900 hover:bg-gray-800 border border-gray-800 rounded-xl text-left flex justify-between items-center">
+                        <span class="text-sm font-medium">Enkel vana</span>
+                        <span class="text-xs font-bold text-indigo-400">+10 XP</span>
+                    </button>
+                    <button onclick="quickLog('Träna/Promenera 20 min', 25)" class="p-3 bg-gray-900 hover:bg-gray-800 border border-gray-800 rounded-xl text-left flex justify-between items-center">
+                        <span class="text-sm font-medium">Träna / Gå 20 min</span>
+                        <span class="text-xs font-bold text-indigo-400">+25 XP</span>
+                    </button>
+                    <button onclick="quickLog('Springa 5 km', 75)" class="p-3 bg-gray-900 hover:bg-gray-800 border border-gray-800 rounded-xl text-left flex justify-between items-center">
+                        <span class="text-sm font-medium">Springa 5 km</span>
+                        <span class="text-xs font-bold text-indigo-400">+75 XP</span>
+                    </button>
+                    <button onclick="quickLog('Springa 10 km', 150)" class="p-3 bg-gray-900 hover:bg-gray-800 border border-gray-800 rounded-xl text-left flex justify-between items-center">
+                        <span class="text-sm font-medium">Springa 10 km</span>
+                        <span class="text-xs font-bold text-indigo-400">+150 XP</span>
+                    </button>
+                </div>
+
+                <!-- Manuell loggning med tidig-morgon-bonus -->
+                <form onsubmit="logCustomActivity(event)" class="space-y-4 border-t border-gray-800 pt-4">
+                    <h3 class="text-sm font-semibold text-gray-300">Anpassat pass / Strava-verifiering</h3>
+                    <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                        <input type="text" id="act-name" placeholder="Aktivitet (t.ex. Landsvägscykling)" required class="bg-gray-900 border border-gray-800 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-indigo-500">
+                        <input type="number" id="act-xp" placeholder="Bas-XP" value="50" required class="bg-gray-900 border border-gray-800 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-indigo-500">
+                        <div class="flex items-center space-x-2 bg-gray-900 border border-gray-800 rounded-xl px-4 py-3">
+                            <input type="checkbox" id="act-early" class="rounded text-indigo-600 focus:ring-0">
+                            <label for="act-early" class="text-xs text-gray-300 cursor-pointer">Tidig morgon (före kl 05) (+50 bonus)</label>
+                        </div>
+                    </div>
+                    <button type="submit" class="w-full bg-indigo-600 hover:bg-indigo-500 font-semibold py-3 rounded-xl text-sm transition">
+                        Godkänn Aktivitet & Hämta XP
+                    </button>
+                </form>
+
+                <!-- Historik -->
+                <h3 class="font-semibold text-sm text-gray-400 mt-6 mb-3">Loggade aktiviteter</h3>
+                <div id="activity-history" class="space-y-2">
+                    <!-- Historik hamnar här -->
+                </div>
+            </div>
+        </section>
+
+        <!-- TAB: FOCUS TIMER (1 HOUR) -->
+        <section id="view-focus" class="hidden space-y-4">
+            <div class="glass p-8 rounded-2xl text-center flex flex-col items-center">
+                <div class="w-16 h-16 rounded-full bg-indigo-500/10 text-indigo-400 flex items-center justify-center mb-4">
+                    <i data-lucide="lock" class="w-8 h-8"></i>
+                </div>
+                <h2 class="text-2xl font-bold mb-1">60-Minuters Fokuspass</h2>
+                <p class="text-gray-400 text-sm mb-6 max-w-sm">Slutför 60 minuter oavbrutet arbete för 100 XP.</p>
+
+                <div id="timer-display" class="text-6xl font-black tracking-widest text-white mb-8 font-mono">
+                    60:00
+                </div>
+
+                <div class="flex space-x-4">
+                    <button id="btn-start-timer" onclick="toggleTimer()" class="bg-indigo-600 hover:bg-indigo-500 text-white font-semibold px-8 py-4 rounded-xl shadow-lg transition flex items-center space-x-2">
+                        <i data-lucide="play" class="w-5 h-5"></i><span>Starta Fokuspass</span>
+                    </button>
+                    <button onclick="resetTimer()" class="bg-gray-800 hover:bg-gray-700 text-gray-300 font-semibold px-6 py-4 rounded-xl transition">
+                        Återställ
+                    </button>
+                </div>
+            </div>
+        </section>
+
+        <!-- TAB: LEADERBOARD / TOPPLISTA -->
+        <section id="view-leaderboard" class="hidden space-y-4">
+            <div class="glass p-6 rounded-2xl">
+                <h2 class="text-xl font-bold mb-4 flex items-center space-x-2">
+                    <i data-lucide="trophy" class="text-yellow-400"></i>
+                    <span>Kompis-Topplista</span>
+                </h2>
+                <div id="leaderboard-list" class="space-y-3">
+                    <div class="flex items-center justify-between p-4 bg-gray-900 border border-gray-800 rounded-xl">
+                        <div class="flex items-center space-x-3">
+                            <span class="font-bold text-gray-500">#1</span>
+                            <span class="font-semibold text-gray-200">Du (Du leder!)</span>
+                        </div>
+                        <span id="lb-user-xp" class="text-indigo-400 font-bold">0 XP</span>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <script>
+        // -------------------------------------------------------------
+        // SUPABASE & RANK KONFIGURATION
+        // -------------------------------------------------------------
+        const SUPABASE_URL = "https://nryiprvcbjlonrfkrist.supabase.co";
+        const SUPABASE_ANON_KEY = "KLISTRA_IN_DIN_PUBLIKA_ANON_KEY_HÄR"; 
+
+        const supabase = (SUPABASE_ANON_KEY && !SUPABASE_ANON_KEY.includes("KLISTRA_IN")) 
+            ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
+            : null;
+
+        // Fortnite-inspirerade Ranks
+        const RANKS = [
+            { name: "Bronze I", minXP: 0, class: "rank-bronze" },
+            { name: "Bronze II", minXP: 100, class: "rank-bronze" },
+            { name: "Silver I", minXP: 250, class: "rank-silver" },
+            { name: "Gold I", minXP: 500, class: "rank-gold" },
+            { name: "Platinum I", minXP: 1000, class: "rank-platinum" },
+            { name: "Diamond I", minXP: 2000, class: "rank-diamond" },
+            { name: "UNREAL", minXP: 5000, class: "rank-unreal" }
+        ];
+
+        let state = {
+            xp: 0,
+            streak: 1,
+            tasks: [
+                { id: 1, text: "Klara en enkel vana", xp: 10, completed: false }
+            ],
+            activities: []
+        };
+
+        window.addEventListener('DOMContentLoaded', () => {
+            lucide.createIcons();
+            loadState();
+            render();
+            if (supabase) {
+                document.getElementById('sync-status').textContent = 'Ansluten till Supabase';
+            } else {
+                document.getElementById('sync-status').textContent = 'Körs i lokalt läge';
+            }
+        });
+
+        function getRank(xp) {
+            let currentRank = RANKS[0];
+            for (let r of RANKS) {
+                if (xp >= r.minXP) currentRank = r;
+            }
+            return currentRank;
+        }
+
+        function render() {
+            // Render Rank & XP
+            const r = getRank(state.xp);
+            const rankEl = document.getElementById('user-rank');
+            rankEl.textContent = r.name;
+            rankEl.className = `font-extrabold text-sm tracking-wider uppercase ${r.class}`;
+            document.getElementById('xp-text').textContent = `${state.xp} XP totalt`;
+            document.getElementById('streak-count').textContent = state.streak;
+            document.getElementById('lb-user-xp').textContent = `${state.xp} XP`;
+
+            // Tasks
+            const taskContainer = document.getElementById('task-list');
+            taskContainer.innerHTML = '';
+            state.tasks.forEach(task => {
+                const el = document.createElement('div');
+                el.className = `flex items-center justify-between p-4 rounded-xl border transition ${task.completed ? 'bg-gray-900/50 border-gray-800/50 opacity-60' : 'bg-gray-900 border-gray-800'}`;
+                el.innerHTML = `
+                    <div class="flex items-center space-x-3">
+                        <button onclick="toggleTask(${task.id})" class="w-6 h-6 rounded-lg border flex items-center justify-center transition ${task.completed ? 'bg-indigo-600 border-indigo-600 text-white' : 'border-gray-700 hover:border-indigo-500'}">
+                            ${task.completed ? '<i data-lucide="check" class="w-4 h-4"></i>' : ''}
+                        </button>
+                        <span class="${task.completed ? 'line-through text-gray-500' : 'text-gray-200'} font-medium text-sm">${task.text}</span>
+                    </div>
+                    <span class="text-xs font-semibold px-2.5 py-1 rounded-md bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">+${task.xp} XP</span>
+                `;
+                taskContainer.appendChild(el);
+            });
+
+            // Activity History
+            const actContainer = document.getElementById('activity-history');
+            actContainer.innerHTML = '';
+            if (state.activities.length === 0) {
+                actContainer.innerHTML = '<p class="text-xs text-gray-500">Inga pass loggade ännu.</p>';
+            } else {
+                state.activities.slice(-4).reverse().forEach(a => {
+                    const el = document.createElement('div');
+                    el.className = "flex justify-between items-center p-3 rounded-lg bg-gray-900/60 border border-gray-800/80 text-xs";
+                    el.innerHTML = `
+                        <span class="font-medium text-gray-200">${a.name}</span>
+                        <span class="text-indigo-400 font-semibold">+${a.xp} XP</span>
+                    `;
+                    actContainer.appendChild(el);
+                });
+            }
+            lucide.createIcons();
+        }
+
+        function addXP(amount) {
+            state.xp += amount;
+            saveState();
+            render();
+        }
+
+        function toggleTask(id) {
+            const task = state.tasks.find(t => t.id === id);
+            if (task) {
+                task.completed = !task.completed;
+                if (task.completed) addXP(task.xp);
+                else state.xp = Math.max(0, state.xp - task.xp);
+                saveState();
+                render();
+            }
+        }
+
+        function addTask(e) {
+            e.preventDefault();
+            const input = document.getElementById('task-input');
+            const xpInput = document.getElementById('task-xp');
+            state.tasks.push({ id: Date.now(), text: input.value, xp: parseInt(xpInput.value) || 10, completed: false });
+            input.value = '';
+            saveState();
+            render();
+        }
+
+        function quickLog(name, xp) {
+            state.activities.push({ name, xp, date: new Date().toISOString() });
+            addXP(xp);
+        }
+
+        function logCustomActivity(e) {
+            e.preventDefault();
+            const name = document.getElementById('act-name').value;
+            let xp = parseInt(document.getElementById('act-xp').value) || 50;
+            const isEarly = document.getElementById('act-early').checked;
+            
+            if (isEarly) {
+                xp += 50;
+                alert("Tidig morgon-bonus tillagd! (+50 XP)");
+            }
+
+            state.activities.push({ name, xp, date: new Date().toISOString() });
+            addXP(xp);
+            document.getElementById('act-name').value = '';
+        }
+
+        // Timer
+        let timerInterval = null;
+        let timeLeft = 3600;
+
+        function toggleTimer() {
+            const btn = document.getElementById('btn-start-timer');
+            if (timerInterval) {
+                clearInterval(timerInterval);
+                timerInterval = null;
+                btn.innerHTML = '<i data-lucide="play" class="w-5 h-5"></i><span>Fortsätt Fokuspass</span>';
+            } else {
+                timerInterval = setInterval(() => {
+                    timeLeft--;
+                    updateTimerDisplay();
+                    if (timeLeft <= 0) {
+                        clearInterval(timerInterval);
+                        timerInterval = null;
+                        alert("60 min fokus fullbordat! Du vann 100 XP!");
+                        addXP(100);
+                        resetTimer();
+                    }
+                }, 1000);
+                btn.innerHTML = '<i data-lucide="pause" class="w-5 h-5"></i><span>Pausa</span>';
+            }
+            lucide.createIcons();
+        }
+
+        function resetTimer() {
+            clearInterval(timerInterval);
+            timerInterval = null;
+            timeLeft = 3600;
+            updateTimerDisplay();
+        }
+
+        function updateTimerDisplay() {
+            const m = Math.floor(timeLeft / 60).toString().padStart(2, '0');
+            const s = (timeLeft % 60).toString().padStart(2, '0');
+            document.getElementById('timer-display').textContent = `${m}:${s}`;
+        }
+
+        function switchTab(tab) {
+            ['dashboard', 'strava', 'focus', 'leaderboard'].forEach(t => {
+                document.getElementById(`view-${t}`).classList.add('hidden');
+                const tabBtn = document.getElementById(`tab-${t}`);
+                tabBtn.classList.remove('bg-indigo-600', 'text-white');
+                tabBtn.classList.add('text-gray-400');
+            });
+            document.getElementById(`view-${tab}`).classList.remove('hidden');
+            const activeTab = document.getElementById(`tab-${tab}`);
+            activeTab.classList.add('bg-indigo-600', 'text-white');
+            activeTab.classList.remove('text-gray-400');
+        }
+
+        function saveState() {
+            localStorage.setItem('crique_v2_state', JSON.stringify(state));
+        }
+
+        function loadState() {
+            const saved = localStorage.getItem('crique_v2_state');
+            if (saved) state = JSON.parse(saved);
+        }
+    </script>
+</body>
+</html>
